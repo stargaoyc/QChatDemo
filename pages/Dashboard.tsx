@@ -231,11 +231,11 @@ const Dashboard: React.FC = () => {
       <aside className="w-80 flex flex-col border-r border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 transition-colors duration-200">
         
         {/* User Profile Header */}
-        <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between">
+        <div className="p-4 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between draggable">
             <h1 className="font-bold text-xl text-indigo-700 dark:text-indigo-400 tracking-tight flex items-center gap-2">
                 <MessageSquare className="fill-current" size={24}/> QChat
             </h1>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 no-drag">
                  <div className="text-xs text-right hidden sm:block">
                     <div className="font-bold text-slate-700 dark:text-slate-200">{currentUser.username}</div>
                     <div className="text-slate-400 dark:text-slate-500">ID: {currentUser.id}</div>

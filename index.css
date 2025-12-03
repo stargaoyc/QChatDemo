@@ -32,9 +32,9 @@ body {
 
 /* Global Input Fixes for Electron */
 input, textarea {
-  user-select: text;
-  -webkit-user-select: text;
-  -webkit-app-region: no-drag;
+  user-select: text !important;
+  -webkit-user-select: text !important;
+  -webkit-app-region: no-drag !important;
   cursor: text;
 }
 
@@ -43,5 +43,9 @@ input, textarea {
   -webkit-app-region: drag;
 }
 .no-drag {
+  -webkit-app-region: no-drag;
+  cursor: default;
+}
+button, a {
   -webkit-app-region: no-drag;
 }

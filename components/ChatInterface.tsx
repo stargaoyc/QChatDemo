@@ -155,15 +155,15 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversationId, recipient
   return (
     <div className="flex flex-col h-full bg-slate-50 dark:bg-slate-900 relative transition-colors duration-200">
       {/* Header */}
-      <header className="h-16 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-between px-4 shadow-sm z-10 transition-colors duration-200">
-        <div className="flex items-center gap-3">
+      <header className="h-16 border-b border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 flex items-center justify-between px-4 shadow-sm z-10 transition-colors duration-200 draggable">
+        <div className="flex items-center gap-3 no-drag">
           <Avatar name={recipient.username} src={recipient.avatarUrl} status={recipient.status} />
           <div>
             <h2 className="font-semibold text-slate-800 dark:text-white leading-tight">{recipient.username}</h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">{getStatusText(recipient.status)}</p>
           </div>
         </div>
-        <div className="flex items-center gap-4 text-slate-400 dark:text-slate-500 relative">
+        <div className="flex items-center gap-4 text-slate-400 dark:text-slate-500 relative no-drag">
            <button className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"><Phone size={20} /></button>
            <button className="hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"><Video size={20} /></button>
            <button 
