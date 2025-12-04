@@ -39,6 +39,8 @@ class SocketService {
   private wsUrl: string = ''; // Current URL for reference
 
   private currentUser: User | null = null;
+    // Cache messages received before any UI handler is attached
+    private earlyMessages: Message[] = [];
   
   getState(): ConnectionState {
       return this.state;
@@ -322,8 +324,14 @@ class SocketService {
   // --- Listeners ---
 
   onMessage(handler: MessageHandler) {
-    this.messageHandlers.add(handler);
-    return () => this.messageHandlers.delete(handler);
+        this.messageHandlers.add(handler);
+        // Immediately replay any messages that arrived before handler registration
+        if (this.earlyMessages.length > 0) {
+            this.earlyMessages.forEach(m => handler(m));
+            // Clear buffer after first replay to avoid duplicates on subsequent subscriptions
+            this.earlyMessages = [];
+        }
+        return () => this.messageHandlers.delete(handler);
   }
 
   onConnectionChange(handler: ConnectionHandler) {
@@ -377,7 +385,12 @@ class SocketService {
   }
 
   private notifyMessage(message: Message) {
-    this.messageHandlers.forEach(h => h(message));
+        if (this.messageHandlers.size === 0) {
+            // No active handlers yet (e.g. Dashboard not mounted); queue for later
+            this.earlyMessages.push(message);
+            return;
+        }
+        this.messageHandlers.forEach(h => h(message));
   }
 
   private startHeartbeat() {

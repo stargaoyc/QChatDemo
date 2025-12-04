@@ -1,5 +1,7 @@
 
 const { WebSocketServer } = require('ws');
+const fs = require('fs');
+const path = require('path');
 
 const PORT = Number(process.env.PORT) || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
@@ -10,6 +12,63 @@ console.log(`Signaling Server started on ws://${HOST}:${PORT}`);
 
 // Store clients: userId -> WebSocket
 const clients = new Map();
+
+// --- Offline message persistence ---
+// Simple JSON file based store: { [userId]: Message[] }
+const DATA_DIR = path.join(__dirname, 'data');
+const OFFLINE_FILE = path.join(DATA_DIR, 'offlineMessages.json');
+
+// Ensure data directory exists
+if (!fs.existsSync(DATA_DIR)) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function loadOfflineStore() {
+  try {
+    if (!fs.existsSync(OFFLINE_FILE)) return {};
+    const raw = fs.readFileSync(OFFLINE_FILE, 'utf-8');
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    console.error('Failed to load offline store, starting empty.', e);
+    return {};
+  }
+}
+
+function saveOfflineStore(store) {
+  try {
+    fs.writeFileSync(OFFLINE_FILE, JSON.stringify(store, null, 2), 'utf-8');
+  } catch (e) {
+    console.error('Failed to save offline store.', e);
+  }
+}
+
+// In-memory cache, synced to disk on change
+let offlineStore = loadOfflineStore();
+
+function queueOfflineMessage(targetUserId, type, payload) {
+  if (!targetUserId) return;
+  if (!offlineStore[targetUserId]) {
+    offlineStore[targetUserId] = [];
+  }
+  offlineStore[targetUserId].push({ type, payload, queuedAt: Date.now() });
+  saveOfflineStore(offlineStore);
+}
+
+function deliverQueuedMessages(userId, ws) {
+  const messages = offlineStore[userId];
+  if (!messages || !messages.length) return;
+
+  console.log(`Delivering ${messages.length} queued messages to ${userId}`);
+  for (const msg of messages) {
+    if (ws.readyState === 1) {
+      ws.send(JSON.stringify({ type: msg.type, payload: msg.payload }));
+    }
+  }
+
+  // Clear after successful attempt
+  delete offlineStore[userId];
+  saveOfflineStore(offlineStore);
+}
 
 wss.on('connection', (ws) => {
   let currentUserId = null;
@@ -51,6 +110,9 @@ wss.on('connection', (ws) => {
             userIds: onlineUsers
         }));
 
+        // Deliver any queued offline messages for this user
+        deliverQueuedMessages(currentUserId, ws);
+
         // Broadcast presence
         broadcastStatus(currentUserId, 'online');
         return;
@@ -69,8 +131,12 @@ wss.on('connection', (ws) => {
           }));
           console.log(`Relayed ${message.type} from ${currentUserId} to ${targetUserId}`);
         } else {
-          // Store offline message logic would go here
-          console.log(`User ${targetUserId} is offline or not found.`);
+          // Persist offline messages so they survive server restarts
+          console.log(`User ${targetUserId} is offline or not found. Queuing offline ${message.type}.`);
+          // Only queue actual chat payloads and delivery receipts; friend signals usually can be ignored/offline as needed
+          if (message.type === 'CHAT' || message.type === 'FRIEND_REQUEST' || message.type === 'FRIEND_ACCEPT') {
+            queueOfflineMessage(targetUserId, message.type, payload);
+          }
         }
       }
 

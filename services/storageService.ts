@@ -14,6 +14,8 @@ class StorageService {
   private isElectron: boolean;
   private currentUserId: string | null = null;
   private cachedUser: User | null = null;
+  // Simple per-key async locks to avoid read-modify-write races
+  private locks: Map<string, Promise<void>> = new Map();
 
   constructor() {
     this.isElectron = typeof window.electronAPI !== 'undefined';
@@ -50,6 +52,16 @@ class StorageService {
     } else {
       localStorage.setItem(finalKey, JSON.stringify(value));
     }
+  }
+
+  // Execute fn sequentially per storage key to prevent race conditions
+  private async withLock(key: string, fn: () => Promise<void>): Promise<void> {
+    const prev = this.locks.get(key) || Promise.resolve();
+    // chain the operations
+    const next = prev.then(() => fn());
+    // store a settled promise to keep chain
+    this.locks.set(key, next.catch(() => {}));
+    return next;
   }
   
   async init(): Promise<void> {
@@ -194,19 +206,22 @@ class StorageService {
 
   async saveMessage(message: Message): Promise<void> {
     try {
-      const allMessages = (await this.getItem<Message[]>(KEY_MESSAGES)) || [];
       const currentUser = await this.getCurrentUser();
-      
-      const index = allMessages.findIndex(m => m.id === message.id);
-      if (index >= 0) {
-        allMessages[index] = message;
-      } else {
-        allMessages.push(message);
-      }
-      await this.setItem(KEY_MESSAGES, allMessages);
+      await this.withLock(KEY_MESSAGES, async () => {
+        const allMessages = (await this.getItem<Message[]>(KEY_MESSAGES)) || [];
+        const idx = allMessages.findIndex(m => m.id === message.id);
+        if (idx >= 0) {
+          allMessages[idx] = message;
+        } else {
+          allMessages.push(message);
+        }
+        await this.setItem(KEY_MESSAGES, allMessages);
+      });
 
       if (currentUser) {
+        await this.withLock(KEY_CONVERSATIONS, async () => {
           await this.updateConversationLastMessage(message.conversationId, message, currentUser.id);
+        });
       }
     } catch (e) {
       logger.error('Storage', 'Failed to save message', e);
