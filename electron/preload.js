@@ -7,7 +7,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         'db:get', 'db:set', 'db:clear', 
         'app:quit', 'auth:login', 'auth:logout', 
         'net:resolve-dns',
-        'file:save-image', 'file:read-image'
+        'file:save-image', 'file:read-image',
+        'db:messages-by-conversation', 'db:message-upsert',
+        'db:conversation-update-last', 'db:conversation-create',
+        'db:conversation-mark-read', 'db:convo-delete-by-participant'
     ];
     if (validChannels.includes(channel)) {
       return ipcRenderer.invoke(channel, data);

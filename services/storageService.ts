@@ -187,17 +187,26 @@ class StorageService {
   // --- Conversations ---
 
   async getConversations(): Promise<Conversation[]> {
+    // In Electron, main.js already returns sorted conversations
     const convos = (await this.getItem<Conversation[]>(KEY_CONVERSATIONS)) || [];
     return convos.sort((a, b) => b.updatedAt - a.updatedAt);
   }
 
   async removeConversationByParticipantId(participantId: string): Promise<void> {
-    let convos = await this.getConversations();
-    convos = convos.filter(c => c.participantId !== participantId);
-    await this.setItem(KEY_CONVERSATIONS, convos);
+    if (this.isElectron) {
+      await window.electronAPI!.invoke('db:convo-delete-by-participant', participantId);
+    } else {
+      let convos = await this.getConversations();
+      convos = convos.filter(c => c.participantId !== participantId);
+      await this.setItem(KEY_CONVERSATIONS, convos);
+    }
   }
 
   async getMessages(conversationId: string): Promise<Message[]> {
+    if (this.isElectron) {
+      const msgs = await window.electronAPI!.invoke('db:messages-by-conversation', conversationId) as Message[];
+      return (msgs || []).sort((a, b) => a.timestamp - b.timestamp);
+    }
     const allMessages = (await this.getItem<Message[]>(KEY_MESSAGES)) || [];
     return allMessages
       .filter(m => m.conversationId === conversationId)
@@ -207,6 +216,20 @@ class StorageService {
   async saveMessage(message: Message): Promise<void> {
     try {
       const currentUser = await this.getCurrentUser();
+
+      if (this.isElectron) {
+        await window.electronAPI!.invoke('db:message-upsert', message);
+        if (currentUser) {
+          await window.electronAPI!.invoke('db:conversation-update-last', {
+            conversationId: message.conversationId,
+            message,
+            currentUserId: currentUser.id,
+          });
+        }
+        return;
+      }
+
+      // Browser fallback: keep legacy array semantics
       await this.withLock(KEY_MESSAGES, async () => {
         const allMessages = (await this.getItem<Message[]>(KEY_MESSAGES)) || [];
         const idx = allMessages.findIndex(m => m.id === message.id);
@@ -220,7 +243,7 @@ class StorageService {
 
       if (currentUser) {
         await this.withLock(KEY_CONVERSATIONS, async () => {
-          await this.updateConversationLastMessage(message.conversationId, message, currentUser.id);
+          await this.updateConversationLastMessageLegacy(message.conversationId, message, currentUser.id);
         });
       }
     } catch (e) {
@@ -229,20 +252,18 @@ class StorageService {
     }
   }
 
-  private async updateConversationLastMessage(conversationId: string, message: Message, currentUserId: string) {
+  private async updateConversationLastMessageLegacy(conversationId: string, message: Message, currentUserId: string) {
     const convos = await this.getConversations();
     const index = convos.findIndex(c => c.id === conversationId);
     
     if (index >= 0) {
       convos[index].lastMessage = message;
       convos[index].updatedAt = message.timestamp;
-      // If I didn't send it, increment unread
       if (message.senderId !== currentUserId) {
          convos[index].unreadCount += 1;
       }
       await this.setItem(KEY_CONVERSATIONS, convos);
     } else {
-      // Create new conversation entry if it doesn't exist
       const newConvo: Conversation = {
         id: conversationId,
         participantId: message.senderId === currentUserId ? 'user_002' : message.senderId,
@@ -261,10 +282,15 @@ class StorageService {
   }
 
   async createConversation(participantId: string): Promise<string> {
-      const convos = await this.getConversations();
       const currentUser = await this.getCurrentUser();
       if (!currentUser) throw new Error("No user logged in");
 
+      if (this.isElectron) {
+        return await window.electronAPI!.invoke('db:conversation-create', { participantId, currentUserId: currentUser.id });
+      }
+
+      // Browser fallback
+      const convos = await this.getConversations();
       const existing = convos.find(c => c.participantId === participantId);
       if (existing) return existing.id;
 
@@ -284,6 +310,11 @@ class StorageService {
   }
 
   async markConversationRead(conversationId: string): Promise<void> {
+    if (this.isElectron) {
+      await window.electronAPI!.invoke('db:conversation-mark-read', conversationId);
+      return;
+    }
+
     const convos = await this.getConversations();
     const index = convos.findIndex(c => c.id === conversationId);
     if (index >= 0) {

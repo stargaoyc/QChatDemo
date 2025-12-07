@@ -3,27 +3,17 @@ const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
 const dns = require('dns');
 const fileService = require('./fileService');
+const dbService = require('./dbService');
 
 // Global reference to prevent garbage collection
 let mainWindow;
-
-// Storage references
-let StoreClass;
-let globalStore; // For app-wide settings (e.g. who is logged in currently)
-let userStore;   // For specific user data (messages, contacts)
 
 // 1. Native check for Dev environment
 const isDev = !app.isPackaged;
 
 async function initialize() {
   try {
-    // 2. Dynamic Import for ESM-only packages
-    const { default: Store } = await import('electron-store');
-    StoreClass = Store;
-    
-    // Initialize Global Store (config.json)
-    globalStore = new Store({ name: isDev ? 'config-dev' : 'config' });
-    
+    // SQLite dbService is required synchronously above; nothing else to init here
     createWindow();
   } catch (error) {
     console.error('Failed to initialize app:', error);
@@ -81,78 +71,193 @@ app.on('window-all-closed', () => {
 
 // --- IPC Handlers (Backend Logic) ---
 
-// Auth: Switch Storage File
+// Auth: Switch Storage File (SQLite per-user DB)
 ipcMain.handle('auth:login', (event, userId) => {
-    if (!StoreClass || !userId) return false;
-    
-    // Switch to user-specific file: e.g., "user_user_001.json"
-    // Using a clean filename
-    const safeId = userId.replace(/[^a-z0-9_-]/gi, '_');
-    const fileName = `user_${safeId}${isDev ? '_dev' : ''}`;
-    
-    console.log(`[Main] Switching storage to: ${fileName}`);
-    userStore = new StoreClass({ name: fileName });
-    return true;
+  if (!userId) return false;
+
+  const safeId = userId.replace(/[^a-z0-9_-]/gi, '_');
+  const fileName = `user_${safeId}${isDev ? '_dev' : ''}`;
+
+  console.log(`[Main] Switching storage to SQLite DB: ${fileName}`);
+  dbService.openUserDb(fileName);
+  return true;
 });
 
 ipcMain.handle('auth:logout', () => {
-    console.log('[Main] Logging out, clearing user store reference');
-    userStore = null;
-    return true;
+  console.log('[Main] Logging out, closing user DB');
+  dbService.closeUserDb();
+  return true;
 });
 
 // Get Data
 ipcMain.handle('db:get', (event, key) => {
-  // Special keys that always live in Global Store
   if (key === 'orbit_current_user') {
-      return globalStore ? globalStore.get(key) : null;
+    return dbService.getGlobal(key);
   }
-  
-  // Per-user keys
-  if (userStore) {
-      return userStore.get(key);
+
+  // Per-user structured data
+  if (key === 'orbit_settings') {
+    return dbService.getSettings();
   }
-  
-  // Fallback (e.g. before login)
-  return globalStore ? globalStore.get(key) : null;
+  if (key === 'orbit_contacts') {
+    return dbService.getContacts();
+  }
+  if (key === 'orbit_friend_requests') {
+    return dbService.getFriendRequests();
+  }
+    if (key === 'orbit_messages') {
+      // Return all messages for compatibility (renderer will filter by conversationId)
+      return dbService.getAllMessages();
+    }
+    if (key === 'orbit_conversations') {
+        // Reconstruct as array including lastMessage object, if resolvable
+        const convos = dbService.getConversations();
+        const allMessages = dbService.getAllMessages();
+        const byId = new Map();
+        for (const m of allMessages) {
+          byId.set(m.id, m);
+        }
+        return convos.map(c => ({
+          id: c.id,
+          participantId: c.participantId,
+          unreadCount: c.unreadCount ?? 0,
+          updatedAt: c.updatedAt ?? 0,
+          lastMessage: c.lastMessageId ? byId.get(c.lastMessageId) || null : null,
+        }));
+    }
+
+  // Fallback for unstructured keys (not expected now)
+  const userVal = dbService.getUser(key);
+  if (userVal !== null && userVal !== undefined) return userVal;
+  return dbService.getGlobal(key);
 });
 
 // Set Data
 ipcMain.handle('db:set', (event, { key, value }) => {
   if (key === 'orbit_current_user') {
-      if (globalStore) globalStore.set(key, value);
-      return true;
+    dbService.setGlobal(key, value);
+    return true;
   }
+  if (key === 'orbit_settings') {
+    dbService.setSettingsKey('app', value);
+    return true;
+  }
+  if (key === 'orbit_contacts') {
+    dbService.setContacts(value || []);
+    return true;
+  }
+  if (key === 'orbit_friend_requests') {
+    // storageService 目前是整表覆盖或按单条操作，这里只支持整表覆盖场景
+    // 为简单起见，这里直接清空并逐条 upsert
+    if (Array.isArray(value)) {
+      value.forEach(req => dbService.upsertFriendRequest(req));
+    }
+    return true;
+  }
+    if (key === 'orbit_messages') {
+      dbService.replaceAllMessages(value || []);
+      return true;
+    }
+    if (key === 'orbit_conversations') {
+      dbService.replaceAllConversations(value || []);
+      return true;
+    }
 
-  if (userStore) {
-      userStore.set(key, value);
-      return true;
-  }
-  
-  if (globalStore) {
-      globalStore.set(key, value);
-      return true;
-  }
-  return false;
+  const ok = dbService.setUser(key, value);
+  if (ok) return true;
+
+  dbService.setGlobal(key, value);
+  return true;
 });
 
 // Clear Data
 ipcMain.handle('db:clear', async () => {
-  if (userStore) {
-      // 1. Find all images belonging to this user
-      const messages = userStore.get('orbit_messages') || [];
-      const imageFiles = messages
-          .filter(m => m.type === 'IMAGE' && m.content && !m.content.startsWith('data:'))
-          .map(m => m.content);
-      
-      // 2. Delete those specific files
-      if (imageFiles.length > 0) {
-          await fileService.deleteFiles(imageFiles);
-      }
+  // 1. Find all images belonging to this user from messages in SQLite
+  const allMessages = dbService.getMessagesByConversation ? dbService.getAllMessages?.() : [];
+  const imageFiles = Array.isArray(allMessages)
+    ? allMessages
+      .filter(m => m && m.type === 'IMAGE' && m.content && typeof m.content === 'string' && !m.content.startsWith('data:'))
+      .map(m => m.content)
+    : [];
 
-      // 3. Clear the JSON store
-      userStore.clear();
+  if (imageFiles.length > 0) {
+    await fileService.deleteFiles(imageFiles);
   }
+
+  // 2. Clear KV store for this user
+  dbService.clearUser();
+
+  return true;
+});
+
+// Fine-grained DB operations for Electron renderer
+ipcMain.handle('db:messages-by-conversation', (event, conversationId) => {
+  return dbService.getMessagesByConversation(conversationId);
+});
+
+ipcMain.handle('db:message-upsert', (event, message) => {
+  dbService.upsertMessage(message);
+  return true;
+});
+
+ipcMain.handle('db:conversation-update-last', (event, { conversationId, message, currentUserId }) => {
+  const convos = dbService.getConversations();
+  let convo = convos.find(c => c.id === conversationId) || null;
+
+  if (convo) {
+    const unreadInc = message.senderId !== currentUserId ? 1 : 0;
+    convo = {
+      ...convo,
+      lastMessageId: message.id,
+      updatedAt: message.timestamp,
+      unreadCount: (convo.unreadCount || 0) + unreadInc,
+    };
+  } else {
+    const participantId = message.senderId === currentUserId ? 'user_002' : message.senderId;
+    convo = {
+      id: conversationId,
+      participantId,
+      unreadCount: message.senderId !== currentUserId ? 1 : 0,
+      updatedAt: message.timestamp,
+      lastMessageId: message.id,
+    };
+  }
+
+  dbService.upsertConversation(convo);
+  return true;
+});
+
+ipcMain.handle('db:conversation-create', (event, { participantId, currentUserId }) => {
+  const convos = dbService.getConversations();
+  const existing = convos.find(c => c.participantId === participantId);
+  if (existing) return existing.id;
+
+  const ids = [currentUserId, participantId].sort();
+  const newId = `convo_${ids[0]}_${ids[1]}`;
+  const now = Date.now();
+
+  dbService.upsertConversation({
+    id: newId,
+    participantId,
+    unreadCount: 0,
+    updatedAt: now,
+    lastMessageId: null,
+  });
+
+  return newId;
+});
+
+ipcMain.handle('db:conversation-mark-read', (event, conversationId) => {
+  const convos = dbService.getConversations();
+  const existing = convos.find(c => c.id === conversationId);
+  if (!existing) return true;
+  existing.unreadCount = 0;
+  dbService.upsertConversation(existing);
+  return true;
+});
+
+ipcMain.handle('db:convo-delete-by-participant', (event, participantId) => {
+  dbService.deleteConversationByParticipant(participantId);
   return true;
 });
 
