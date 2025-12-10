@@ -156,8 +156,8 @@ ipcMain.handle('db:set', async (event, { key, value }) => {
     return true;
   }
   if (key === 'orbit_friend_requests') {
-    // storageService 目前是整表覆盖或按单条操作，这里只支持整表覆盖场景
-    // 为简单起见，这里直接清空并逐条 upsert
+    // storageService currently overwrites the whole table or operates per-row; we only handle full-table overwrite here
+    // For simplicity, clear then upsert each entry one by one
     if (Array.isArray(value)) {
       for (const req of value) {
         await dbService.upsertFriendRequest(req);

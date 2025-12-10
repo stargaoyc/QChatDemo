@@ -7,13 +7,14 @@ interface MessageBubbleProps {
   message: Message;
   isMe: boolean;
   showAvatar?: boolean;
+  highlightTerm?: string;
 }
 
 const formatTime = (ts: number) => {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 };
 
-const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isMe, showAvatar }) => {
+const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isMe, showAvatar, highlightTerm }) => {
   const [imageUrl, setImageUrl] = useState<string>(
       message.type === MessageType.IMAGE && message.content.startsWith('data:') 
       ? message.content 
@@ -45,6 +46,21 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isMe, showAvatar
     }
   };
 
+  const renderText = (text: string) => {
+      if (!highlightTerm) return <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{text}</p>;
+      const term = highlightTerm.trim();
+      if (!term) return <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{text}</p>;
+      const parts = text.split(new RegExp(`(${term.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi'));
+      return (
+        <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">
+            {parts.map((part, idx) => part.toLowerCase() === term.toLowerCase()
+              ? <mark key={idx} className="bg-yellow-200 text-slate-900 rounded px-0.5">{part}</mark>
+              : <React.Fragment key={idx}>{part}</React.Fragment>
+            )}
+        </p>
+      );
+  };
+
   return (
     <div className={`flex w-full mb-4 ${isMe ? 'justify-end' : 'justify-start'}`}>
       {!isMe && showAvatar && (
@@ -63,9 +79,7 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({ message, isMe, showAvatar
               : 'bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-200 dark:border-slate-700 rounded-2xl rounded-tl-sm'
           }`}
         >
-          {message.type === MessageType.TEXT && (
-            <p className="whitespace-pre-wrap break-words text-sm leading-relaxed">{message.content}</p>
-          )}
+          {message.type === MessageType.TEXT && renderText(message.content)}
 
           {message.type === MessageType.IMAGE && (
             <div className="relative">

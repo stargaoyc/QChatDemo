@@ -19,6 +19,10 @@ const Dashboard: React.FC = () => {
   const [showAddFriend, setShowAddFriend] = useState(false);
     const [editingName, setEditingName] = useState(false);
     const [tempName, setTempName] = useState('');
+    const [searchTerm, setSearchTerm] = useState('');
+    const [filteredConversations, setFilteredConversations] = useState<Conversation[]>([]);
+    const [searchHitMessageByConvo, setSearchHitMessageByConvo] = useState<Record<string, string>>({});
+    const [focusedMessageId, setFocusedMessageId] = useState<string | null>(null);
   
   // Add Friend Inputs
   const [newFriendId, setNewFriendId] = useState('');
@@ -168,7 +172,52 @@ const Dashboard: React.FC = () => {
             if (currentUser && !editingName) {
                 setTempName(currentUser.username || currentUser.id);
             }
+      if (!searchTerm.trim()) {
+          setFilteredConversations(storedConvos);
+      }
   };
+
+  useEffect(() => {
+      let cancelled = false;
+      const run = async () => {
+          const term = searchTerm.trim().toLowerCase();
+          if (!term) {
+              setFilteredConversations(conversations);
+              setSearchHitMessageByConvo({});
+              return;
+          }
+
+          const matches = await Promise.all(conversations.map(async (convo) => {
+              const contact = getContact(convo.participantId);
+              const contactId = contact.id.toLowerCase();
+              const contactName = (contact.username || '').toLowerCase();
+
+              if (contactId.includes(term) || contactName.includes(term)) {
+                  return { convo, hitId: '' };
+              }
+
+              const msgs = await storageService.getMessages(convo.id);
+              const hit = msgs.find(m => m.type === MessageType.TEXT && m.content.toLowerCase().includes(term));
+              return hit ? { convo, hitId: hit.id } : null;
+          }));
+
+          if (!cancelled) {
+              const valid = matches.filter(Boolean) as { convo: Conversation; hitId: string }[];
+              const hitMap: Record<string, string> = {};
+              valid.forEach(item => {
+                  if (item.hitId) hitMap[item.convo.id] = item.hitId;
+              });
+              setSearchHitMessageByConvo(hitMap);
+              setFilteredConversations(valid.map(v => v.convo));
+          }
+      };
+
+      run();
+
+      return () => {
+          cancelled = true;
+      };
+  }, [searchTerm, conversations, contacts]);
 
   const getContact = (id: string): User => {
       const contact = contacts.find(c => c.id === id);
@@ -271,6 +320,9 @@ const Dashboard: React.FC = () => {
 
   if (!currentUser) return null;
 
+    const isSearching = searchTerm.trim().length > 0;
+    const listToRender = filteredConversations;
+
   return (
     <div className="flex h-screen w-full bg-white dark:bg-slate-800 overflow-hidden transition-colors duration-200">
       
@@ -339,6 +391,8 @@ const Dashboard: React.FC = () => {
                 <input 
                     type="text" 
                     placeholder="搜索会话..." 
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
                     className="w-full pl-9 pr-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg text-sm focus:outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100 dark:focus:ring-indigo-900 dark:text-white transition-all"
                 />
             </div>
@@ -385,19 +439,28 @@ const Dashboard: React.FC = () => {
 
         {/* Conversation List */}
         <div className="flex-1 overflow-y-auto px-2 space-y-1 mt-2">
-            {conversations.length === 0 && friendRequests.length === 0 && (
+            {!isSearching && conversations.length === 0 && friendRequests.length === 0 && (
                 <div className="text-center text-slate-400 mt-10 text-sm p-4">
                     暂无会话，点击右上角 "+" 添加好友开始聊天。
                 </div>
             )}
-            {conversations.map(convo => {
+            {isSearching && listToRender.length === 0 && (
+                <div className="text-center text-slate-400 mt-10 text-sm p-4">
+                    未找到匹配的会话或消息。
+                </div>
+            )}
+            {listToRender.map(convo => {
                 const contact = getContact(convo.participantId);
                 const isActive = activeConversationId === convo.id;
                 
                 return (
                     <button
                         key={convo.id}
-                        onClick={() => handleOpenConversation(convo.id)}
+                        onClick={() => {
+                            const hitId = searchHitMessageByConvo[convo.id];
+                            setFocusedMessageId(hitId || null);
+                            handleOpenConversation(convo.id);
+                        }}
                         className={`w-full flex items-center gap-3 p-3 rounded-lg transition-all text-left ${
                             isActive ? 'bg-white dark:bg-slate-800 shadow-sm ring-1 ring-slate-200 dark:ring-slate-700' : 'hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
                         }`}
@@ -458,6 +521,8 @@ const Dashboard: React.FC = () => {
                 conversationId={activeConversationId}
                 currentUser={currentUser}
                 recipient={getContact(conversations.find(c => c.id === activeConversationId)?.participantId || '')}
+                jumpToMessageId={focusedMessageId || undefined}
+                highlightTerm={searchTerm.trim() || undefined}
                 onDeleteFriend={handleDeleteFriend}
              />
          ) : (

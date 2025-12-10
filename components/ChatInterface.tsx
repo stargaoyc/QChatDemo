@@ -14,15 +14,18 @@ interface ChatInterfaceProps {
   currentUser: User;
   onBack?: () => void; // For mobile
   onDeleteFriend?: (id: string) => void;
+  jumpToMessageId?: string;
+  highlightTerm?: string;
 }
 
-const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversationId, recipient, currentUser, onDeleteFriend }) => {
+const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversationId, recipient, currentUser, onDeleteFriend, jumpToMessageId, highlightTerm }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
 
@@ -42,6 +45,7 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversationId, recipient
     const loadMessages = async () => {
       try {
         const msgs = await storageService.getMessages(conversationId);
+        messageRefs.current = {};
         setMessages(msgs);
         scrollToBottom();
         // Mark read
@@ -80,10 +84,33 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversationId, recipient
     };
   }, [conversationId]);
 
+  useEffect(() => {
+      scrollToTargetMessage(jumpToMessageId, highlightTerm);
+  }, [jumpToMessageId, highlightTerm, messages, conversationId]);
+
   const scrollToBottom = () => {
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, 100);
+  };
+
+  const scrollToTargetMessage = (targetId?: string, term?: string) => {
+    const id = targetId || '';
+    const el = id ? messageRefs.current[id] : null;
+    if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
+
+    if (!term) return;
+    const lower = term.toLowerCase();
+    const hit = messages.find(m => m.type === MessageType.TEXT && m.content.toLowerCase().includes(lower));
+    if (hit) {
+        const ref = messageRefs.current[hit.id];
+        if (ref) {
+            ref.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+    }
   };
 
   const handleSendMessage = async (type: MessageType = MessageType.TEXT, content: string = inputValue, attachmentData?: string) => {
@@ -221,12 +248,18 @@ const ChatInterface: React.FC<ChatInterfaceProps> = ({ conversationId, recipient
               </span>
             </div>
             {msgs.map((msg, idx) => (
-              <MessageBubble 
-                key={msg.id} 
-                message={msg} 
-                isMe={msg.senderId === currentUser.id} 
-                showAvatar={idx === 0 || msgs[idx-1].senderId !== msg.senderId}
-              />
+              <div
+                key={msg.id}
+                id={`msg-${msg.id}`}
+                ref={(el) => { messageRefs.current[msg.id] = el; }}
+              >
+                  <MessageBubble 
+                    message={msg} 
+                    isMe={msg.senderId === currentUser.id} 
+                    showAvatar={idx === 0 || msgs[idx-1].senderId !== msg.senderId}
+                    highlightTerm={highlightTerm}
+                  />
+              </div>
             ))}
           </div>
         ))}
