@@ -8,7 +8,7 @@ import { socketService } from '../services/socketService';
 
 const SettingsPage: React.FC = () => {
   const navigate = useNavigate();
-  const [settings, setSettings] = useState<AppSettings>({ theme: 'light', notificationsEnabled: true, logLevel: 'info' });
+    const [settings, setSettings] = useState<AppSettings>({ theme: 'light', notificationsEnabled: true, logLevel: 'info' });
   const [saved, setSaved] = useState(false);
     const [showChangePwd, setShowChangePwd] = useState(false);
     const [newPwd, setNewPwd] = useState('');
@@ -91,20 +91,6 @@ const SettingsPage: React.FC = () => {
                            <option value="dark">深色</option>
                        </select>
                    </div>
-               </div>
-
-               {/* Notifications */}
-               <div className="p-6 border-b border-slate-100 dark:border-slate-700">
-                   <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wide mb-4">通知</h3>
-                   <label className="flex items-center justify-between cursor-pointer">
-                       <span className="text-slate-600 dark:text-slate-300 text-sm">启用桌面通知</span>
-                       <input 
-                        type="checkbox" 
-                        checked={settings.notificationsEnabled}
-                        onChange={e => setSettings({...settings, notificationsEnabled: e.target.checked})}
-                        className="w-5 h-5 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500" 
-                       />
-                   </label>
                </div>
 
                {/* Debugging */}
