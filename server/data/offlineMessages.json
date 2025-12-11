@@ -1,1 +1,17 @@
-{}
+{
+  "123": [
+    {
+      "type": "FRIEND_REQUEST",
+      "payload": {
+        "fromUser": {
+          "id": "user_1",
+          "username": "user_1",
+          "status": "online",
+          "avatarUrl": "https://api.dicebear.com/7.x/avataaars/svg?seed=user_1"
+        },
+        "timestamp": 1765385771400
+      },
+      "queuedAt": 1765385771401
+    }
+  ]
+}

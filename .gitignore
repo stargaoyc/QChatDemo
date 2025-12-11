@@ -138,3 +138,10 @@ dist
 dist/
 dist-electron/
 /server/data/accounts.json
+.history/
+*_data/
+pnpm-workspace.yaml
+.npmrc
+server/data/*.json
+docs/
+.history/

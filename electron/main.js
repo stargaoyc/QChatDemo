@@ -1,9 +1,21 @@
+const { app, BrowserWindow, ipcMain } = require("electron");
+const path = require("path");
+const dns = require("dns");
+const fileService = require("./fileService");
 
-const { app, BrowserWindow, ipcMain } = require('electron');
-const path = require('path');
-const dns = require('dns');
-const fileService = require('./fileService');
-const dbService = require('./dbService');
+// Allow overriding the Electron `userData` path for isolated client instances.
+// Set `USER_DATA_DIR` environment variable (can be relative) before launching.
+let dbService;
+if (process.env.USER_DATA_DIR) {
+  const customUserData = path.resolve(process.env.USER_DATA_DIR);
+  console.log(`[Main] Overriding userData path -> ${customUserData}`);
+  try {
+    app.setPath("userData", customUserData);
+  } catch (err) {
+    console.warn("[Main] Failed to set custom userData path:", err);
+  }
+}
+dbService = require("./dbService");
 
 // Global reference to prevent garbage collection
 let mainWindow;
@@ -16,7 +28,7 @@ async function initialize() {
     // SQLite dbService is required synchronously above; nothing else to init here
     createWindow();
   } catch (error) {
-    console.error('Failed to initialize app:', error);
+    console.error("Failed to initialize app:", error);
   }
 }
 
@@ -27,44 +39,44 @@ function createWindow() {
     minWidth: 900,
     minHeight: 600,
     webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
+      preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false,
       contextIsolation: true,
-      webSecurity: !isDev, 
+      webSecurity: !isDev,
     },
-    titleBarStyle: 'hiddenInset', 
-    autoHideMenuBar: true, 
-    show: false, 
-    backgroundColor: '#f8fafc',
-    title: `QChat${isDev ? ' (DEV)' : ''}`
+    titleBarStyle: "hiddenInset",
+    autoHideMenuBar: true,
+    show: false,
+    backgroundColor: "#f8fafc",
+    title: `QChat${isDev ? " (DEV)" : ""}`,
   });
 
   const startURL = isDev
-    ? 'http://localhost:5173'
-    : `file://${path.join(__dirname, '../dist/index.html')}`;
+    ? "http://localhost:5173"
+    : `file://${path.join(__dirname, "../dist/index.html")}`;
 
   mainWindow.loadURL(startURL);
 
-  mainWindow.once('ready-to-show', () => {
+  mainWindow.once("ready-to-show", () => {
     mainWindow.show();
   });
 
   if (isDev) {
-    mainWindow.webContents.openDevTools({ mode: 'detach' });
+    mainWindow.webContents.openDevTools({ mode: "detach" });
   }
 }
 
 // App Lifecycle
 app.whenReady().then(initialize);
 
-app.on('activate', () => {
+app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     initialize();
   }
 });
 
-app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+app.on("window-all-closed", () => {
+  if (process.platform !== "darwin") {
     app.quit();
   }
 });
@@ -72,64 +84,64 @@ app.on('window-all-closed', () => {
 // --- IPC Handlers (Backend Logic) ---
 
 // Auth: Switch Storage File (SQLite per-user DB)
-ipcMain.handle('auth:login', async (event, userId) => {
+ipcMain.handle("auth:login", async (event, userId) => {
   if (!userId) return false;
 
-  const safeId = userId.replace(/[^a-z0-9_-]/gi, '_');
-  const fileName = `user_${safeId}${isDev ? '_dev' : ''}`;
+  const safeId = userId.replace(/[^a-z0-9_-]/gi, "_");
+  const fileName = `user_${safeId}${isDev ? "_dev" : ""}`;
 
   console.log(`[Main] Switching storage to SQLite DB: ${fileName}`);
   await dbService.openUserDb(fileName);
   return true;
 });
 
-ipcMain.handle('auth:logout', async () => {
-  console.log('[Main] Logging out, closing user DB');
+ipcMain.handle("auth:logout", async () => {
+  console.log("[Main] Logging out, closing user DB");
   await dbService.closeUserDb();
   return true;
 });
 
 // Get Data
-ipcMain.handle('db:get', async (event, key) => {
-  if (key === 'orbit_current_user') {
+ipcMain.handle("db:get", async (event, key) => {
+  if (key === "orbit_current_user") {
     return await dbService.getGlobal(key);
   }
 
-  if (key === 'orbit_users') {
+  if (key === "orbit_users") {
     // Per-user profile map (id -> User), stored in global KV
     return (await dbService.getGlobal(key)) || {};
   }
 
   // Per-user structured data
-  if (key === 'orbit_settings') {
+  if (key === "orbit_settings") {
     return await dbService.getSettings();
   }
-  if (key === 'orbit_contacts') {
+  if (key === "orbit_contacts") {
     return await dbService.getContacts();
   }
-  if (key === 'orbit_friend_requests') {
+  if (key === "orbit_friend_requests") {
     return await dbService.getFriendRequests();
   }
-    if (key === 'orbit_messages') {
-      // Return all messages for compatibility (renderer will filter by conversationId)
-      return await dbService.getAllMessages();
+  if (key === "orbit_messages") {
+    // Return all messages for compatibility (renderer will filter by conversationId)
+    return await dbService.getAllMessages();
+  }
+  if (key === "orbit_conversations") {
+    // Reconstruct as array including lastMessage object, if resolvable
+    const convos = await dbService.getConversations();
+    const allMessages = await dbService.getAllMessages();
+    const byId = new Map();
+    for (const m of allMessages) {
+      byId.set(m.id, m);
     }
-    if (key === 'orbit_conversations') {
-        // Reconstruct as array including lastMessage object, if resolvable
-        const convos = await dbService.getConversations();
-        const allMessages = await dbService.getAllMessages();
-        const byId = new Map();
-        for (const m of allMessages) {
-          byId.set(m.id, m);
-        }
-        return convos.map(c => ({
-          id: c.id,
-          participantId: c.participantId,
-          unreadCount: c.unreadCount ?? 0,
-          updatedAt: c.updatedAt ?? 0,
-          lastMessage: c.lastMessageId ? byId.get(c.lastMessageId) || null : null,
-        }));
-    }
+    return convos.map((c) => ({
+      id: c.id,
+      participantId: c.participantId,
+      unreadCount: c.unreadCount ?? 0,
+      updatedAt: c.updatedAt ?? 0,
+      lastMessage: c.lastMessageId ? byId.get(c.lastMessageId) || null : null,
+    }));
+  }
 
   // Fallback for unstructured keys (not expected now)
   const userVal = await dbService.getUser(key);
@@ -138,24 +150,24 @@ ipcMain.handle('db:get', async (event, key) => {
 });
 
 // Set Data
-ipcMain.handle('db:set', async (event, { key, value }) => {
-  if (key === 'orbit_current_user') {
+ipcMain.handle("db:set", async (event, { key, value }) => {
+  if (key === "orbit_current_user") {
     await dbService.setGlobal(key, value);
     return true;
   }
-  if (key === 'orbit_users') {
+  if (key === "orbit_users") {
     await dbService.setGlobal(key, value || {});
     return true;
   }
-  if (key === 'orbit_settings') {
-    await dbService.setSettingsKey('app', value);
+  if (key === "orbit_settings") {
+    await dbService.setSettingsKey("app", value);
     return true;
   }
-  if (key === 'orbit_contacts') {
+  if (key === "orbit_contacts") {
     await dbService.setContacts(value || []);
     return true;
   }
-  if (key === 'orbit_friend_requests') {
+  if (key === "orbit_friend_requests") {
     // storageService currently overwrites the whole table or operates per-row; we only handle full-table overwrite here
     // For simplicity, clear then upsert each entry one by one
     if (Array.isArray(value)) {
@@ -165,14 +177,14 @@ ipcMain.handle('db:set', async (event, { key, value }) => {
     }
     return true;
   }
-    if (key === 'orbit_messages') {
-      await dbService.replaceAllMessages(value || []);
-      return true;
-    }
-    if (key === 'orbit_conversations') {
-      await dbService.replaceAllConversations(value || []);
-      return true;
-    }
+  if (key === "orbit_messages") {
+    await dbService.replaceAllMessages(value || []);
+    return true;
+  }
+  if (key === "orbit_conversations") {
+    await dbService.replaceAllConversations(value || []);
+    return true;
+  }
 
   const ok = await dbService.setUser(key, value);
   if (ok) return true;
@@ -182,13 +194,20 @@ ipcMain.handle('db:set', async (event, { key, value }) => {
 });
 
 // Clear Data
-ipcMain.handle('db:clear', async () => {
+ipcMain.handle("db:clear", async () => {
   // 1. Find all images belonging to this user from messages in SQLite
   const allMessages = await dbService.getAllMessages();
   const imageFiles = Array.isArray(allMessages)
     ? allMessages
-      .filter(m => m && m.type === 'IMAGE' && m.content && typeof m.content === 'string' && !m.content.startsWith('data:'))
-      .map(m => m.content)
+        .filter(
+          (m) =>
+            m &&
+            m.type === "IMAGE" &&
+            m.content &&
+            typeof m.content === "string" &&
+            !m.content.startsWith("data:"),
+        )
+        .map((m) => m.content)
     : [];
 
   if (imageFiles.length > 0) {
@@ -205,45 +224,48 @@ ipcMain.handle('db:clear', async () => {
 });
 
 // Fine-grained DB operations for Electron renderer
-ipcMain.handle('db:messages-by-conversation', async (event, conversationId) => {
+ipcMain.handle("db:messages-by-conversation", async (event, conversationId) => {
   return await dbService.getMessagesByConversation(conversationId);
 });
 
-ipcMain.handle('db:message-upsert', async (event, message) => {
+ipcMain.handle("db:message-upsert", async (event, message) => {
   await dbService.upsertMessage(message);
   return true;
 });
 
-ipcMain.handle('db:conversation-update-last', async (event, { conversationId, message, currentUserId }) => {
+ipcMain.handle(
+  "db:conversation-update-last",
+  async (event, { conversationId, message, currentUserId }) => {
+    const convos = await dbService.getConversations();
+    let convo = convos.find((c) => c.id === conversationId) || null;
+
+    if (convo) {
+      const unreadInc = message.senderId !== currentUserId ? 1 : 0;
+      convo = {
+        ...convo,
+        lastMessageId: message.id,
+        updatedAt: message.timestamp,
+        unreadCount: (convo.unreadCount || 0) + unreadInc,
+      };
+    } else {
+      const participantId = message.senderId === currentUserId ? "user_002" : message.senderId;
+      convo = {
+        id: conversationId,
+        participantId,
+        unreadCount: message.senderId !== currentUserId ? 1 : 0,
+        updatedAt: message.timestamp,
+        lastMessageId: message.id,
+      };
+    }
+
+    await dbService.upsertConversation(convo);
+    return true;
+  },
+);
+
+ipcMain.handle("db:conversation-create", async (event, { participantId, currentUserId }) => {
   const convos = await dbService.getConversations();
-  let convo = convos.find(c => c.id === conversationId) || null;
-
-  if (convo) {
-    const unreadInc = message.senderId !== currentUserId ? 1 : 0;
-    convo = {
-      ...convo,
-      lastMessageId: message.id,
-      updatedAt: message.timestamp,
-      unreadCount: (convo.unreadCount || 0) + unreadInc,
-    };
-  } else {
-    const participantId = message.senderId === currentUserId ? 'user_002' : message.senderId;
-    convo = {
-      id: conversationId,
-      participantId,
-      unreadCount: message.senderId !== currentUserId ? 1 : 0,
-      updatedAt: message.timestamp,
-      lastMessageId: message.id,
-    };
-  }
-
-  await dbService.upsertConversation(convo);
-  return true;
-});
-
-ipcMain.handle('db:conversation-create', async (event, { participantId, currentUserId }) => {
-  const convos = await dbService.getConversations();
-  const existing = convos.find(c => c.participantId === participantId);
+  const existing = convos.find((c) => c.participantId === participantId);
   if (existing) return existing.id;
 
   const ids = [currentUserId, participantId].sort();
@@ -261,56 +283,56 @@ ipcMain.handle('db:conversation-create', async (event, { participantId, currentU
   return newId;
 });
 
-ipcMain.handle('db:conversation-mark-read', async (event, conversationId) => {
+ipcMain.handle("db:conversation-mark-read", async (event, conversationId) => {
   const convos = await dbService.getConversations();
-  const existing = convos.find(c => c.id === conversationId);
+  const existing = convos.find((c) => c.id === conversationId);
   if (!existing) return true;
   existing.unreadCount = 0;
   await dbService.upsertConversation(existing);
   return true;
 });
 
-ipcMain.handle('db:convo-delete-by-participant', async (event, participantId) => {
+ipcMain.handle("db:convo-delete-by-participant", async (event, participantId) => {
   await dbService.deleteConversationByParticipant(participantId);
   return true;
 });
 
 // Friend requests fine-grained operations
-ipcMain.handle('db:friend-request-upsert', async (event, request) => {
+ipcMain.handle("db:friend-request-upsert", async (event, request) => {
   await dbService.upsertFriendRequest(request);
   return true;
 });
 
-ipcMain.handle('db:friend-request-remove-by-userId', async (event, userId) => {
+ipcMain.handle("db:friend-request-remove-by-userId", async (event, userId) => {
   await dbService.removeFriendRequestByUserId(userId);
   return true;
 });
 
 // Quit App
-ipcMain.handle('app:quit', () => {
-    app.quit();
+ipcMain.handle("app:quit", () => {
+  app.quit();
 });
 
 // DNS Resolution
-ipcMain.handle('net:resolve-dns', async (event, hostname) => {
-    return new Promise((resolve) => {
-        dns.lookup(hostname, { family: 4 }, (err, address) => {
-            if (err) {
-                console.error(`[Main] DNS lookup failed for ${hostname}:`, err);
-                resolve(null);
-            } else {
-                console.log(`[Main] DNS resolved ${hostname} -> ${address}`);
-                resolve(address);
-            }
-        });
+ipcMain.handle("net:resolve-dns", async (event, hostname) => {
+  return new Promise((resolve) => {
+    dns.lookup(hostname, { family: 4 }, (err, address) => {
+      if (err) {
+        console.error(`[Main] DNS lookup failed for ${hostname}:`, err);
+        resolve(null);
+      } else {
+        console.log(`[Main] DNS resolved ${hostname} -> ${address}`);
+        resolve(address);
+      }
     });
+  });
 });
 
 // File System Handlers
-ipcMain.handle('file:save-image', async (event, base64Data) => {
-    return await fileService.saveImage(base64Data);
+ipcMain.handle("file:save-image", async (event, base64Data) => {
+  return await fileService.saveImage(base64Data);
 });
 
-ipcMain.handle('file:read-image', async (event, filename) => {
-    return await fileService.readImage(filename);
+ipcMain.handle("file:read-image", async (event, filename) => {
+  return await fileService.readImage(filename);
 });

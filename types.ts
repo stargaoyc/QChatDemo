@@ -1,22 +1,22 @@
-
 export enum MessageStatus {
-  PENDING = 'PENDING',
-  SENT = 'SENT',
-  DELIVERED = 'DELIVERED',
-  FAILED = 'FAILED',
+  PENDING = "PENDING",
+  SENT = "SENT",
+  DELIVERED = "DELIVERED",
+  FAILED = "FAILED",
 }
 
 export enum MessageType {
-  TEXT = 'TEXT',
-  IMAGE = 'IMAGE',
+  TEXT = "TEXT",
+  IMAGE = "IMAGE",
 }
 
 export interface User {
   id: string;
   username: string;
   avatarUrl?: string;
-  status: 'online' | 'offline' | 'busy';
+  status: "online" | "offline" | "busy";
   lastSeen?: number;
+  publicKey?: string; // JWK string for ECDH
 }
 
 export interface FriendRequest {
@@ -43,9 +43,9 @@ export interface Conversation {
 }
 
 export interface AppSettings {
-  theme: 'light' | 'dark';
+  theme: "light" | "dark";
   notificationsEnabled: boolean;
-  logLevel: 'info' | 'warn' | 'error';
+  logLevel: "info" | "warn" | "error";
   // Optional server configuration for signaling
   serverHost?: string;
   serverPort?: number;
@@ -53,7 +53,7 @@ export interface AppSettings {
 
 // Event types for our mock socket
 export interface SocketEvent {
-  type: 'MESSAGE_RECEIVED' | 'STATUS_UPDATE' | 'CONNECT' | 'DISCONNECT';
+  type: "MESSAGE_RECEIVED" | "STATUS_UPDATE" | "CONNECT" | "DISCONNECT";
   payload?: any;
 }
 

@@ -1,8 +1,8 @@
-const path = require('path');
-const fs = require('fs');
-const { app } = require('electron');
-require('reflect-metadata');
-const { DataSource } = require('typeorm');
+const path = require("path");
+const fs = require("fs");
+const { app } = require("electron");
+require("reflect-metadata");
+const { DataSource } = require("typeorm");
 const {
   KvEntity,
   MessageEntity,
@@ -10,25 +10,33 @@ const {
   ContactEntity,
   FriendRequestEntity,
   SettingEntity,
-} = require('./entities');
+} = require("./entities");
 
 class DbService {
-  constructor() {
-    this.userDataPath = app.getPath('userData');
-    this.dbDir = path.join(this.userDataPath, 'db');
+  constructor(electronApp, dataSourceClass) {
+    const appToUse = electronApp || app;
+    this.DataSource = dataSourceClass || DataSource;
+    if (!appToUse) {
+      console.warn("DbService initialized without electron app");
+      return;
+    }
+    this.userDataPath = appToUse.getPath("userData");
+    this.dbDir = path.join(this.userDataPath, "db");
     if (!fs.existsSync(this.dbDir)) {
       fs.mkdirSync(this.dbDir, { recursive: true });
     }
 
-    this.globalPath = path.join(this.dbDir, 'config.db');
+    this.globalPath = path.join(this.dbDir, "config.db");
     this.globalDataSource = null;
     this.userDataSource = null;
   }
 
   async initGlobal() {
-    if (this.globalDataSource && this.globalDataSource.isInitialized) return;
-    this.globalDataSource = new DataSource({
-      type: 'better-sqlite3',
+    if (this.globalDataSource && this.globalDataSource.isInitialized) {
+      return;
+    }
+    this.globalDataSource = new this.DataSource({
+      type: "better-sqlite3",
       database: this.globalPath,
       entities: [KvEntity],
       synchronize: true,
@@ -38,7 +46,15 @@ class DbService {
 
   async getGlobalRepo() {
     await this.initGlobal();
-    return this.globalDataSource.getRepository('KvStore');
+    try {
+      return this.globalDataSource.getRepository(KvEntity);
+    } catch (err) {
+      // If metadata is somehow missing, re-init and retry to avoid runtime failures
+      await this.globalDataSource.destroy().catch(() => {});
+      this.globalDataSource = null;
+      await this.initGlobal();
+      return this.globalDataSource.getRepository(KvEntity);
+    }
   }
 
   async getGlobal(key) {
@@ -64,10 +80,17 @@ class DbService {
       await this.userDataSource.destroy().catch(() => {});
       this.userDataSource = null;
     }
-    this.userDataSource = new DataSource({
-      type: 'better-sqlite3',
+    this.userDataSource = new this.DataSource({
+      type: "better-sqlite3",
       database: filePath,
-      entities: [KvEntity, MessageEntity, ConversationEntity, ContactEntity, FriendRequestEntity, SettingEntity],
+      entities: [
+        KvEntity,
+        MessageEntity,
+        ConversationEntity,
+        ContactEntity,
+        FriendRequestEntity,
+        SettingEntity,
+      ],
       synchronize: true,
     });
     await this.userDataSource.initialize();
@@ -76,7 +99,7 @@ class DbService {
   // Generic per-user KV (compatibility fallback)
   async getUser(key) {
     if (!this.userDataSource) return null;
-    const repo = this.userDataSource.getRepository('KvStore');
+    const repo = this.userDataSource.getRepository(KvEntity);
     const row = await repo.findOneBy({ key });
     if (!row || row.valueJson == null) return null;
     try {
@@ -88,7 +111,7 @@ class DbService {
 
   async setUser(key, value) {
     this.ensureUserDb();
-    const repo = this.userDataSource.getRepository('KvStore');
+    const repo = this.userDataSource.getRepository(KvEntity);
     const valueJson = JSON.stringify(value);
     await repo.save({ key, valueJson });
     return true;
@@ -103,14 +126,14 @@ class DbService {
 
   ensureUserDb() {
     if (!this.userDataSource || !this.userDataSource.isInitialized) {
-      throw new Error('User DB not initialized');
+      throw new Error("User DB not initialized");
     }
   }
 
   // Settings
   async getSettings() {
     if (!this.userDataSource) return {};
-    const repo = this.userDataSource.getRepository('Setting');
+    const repo = this.userDataSource.getRepository(SettingEntity);
     const rows = await repo.find();
     const out = {};
     for (const r of rows) {
@@ -125,7 +148,7 @@ class DbService {
 
   async setSettingsKey(key, value) {
     this.ensureUserDb();
-    const repo = this.userDataSource.getRepository('Setting');
+    const repo = this.userDataSource.getRepository(SettingEntity);
     const valueJson = JSON.stringify(value);
     await repo.save({ key, valueJson });
     return true;
@@ -134,13 +157,13 @@ class DbService {
   // Contacts
   async getContacts() {
     if (!this.userDataSource) return [];
-    const repo = this.userDataSource.getRepository('Contact');
+    const repo = this.userDataSource.getRepository(ContactEntity);
     return await repo.find();
   }
 
   async setContacts(contacts) {
     this.ensureUserDb();
-    const repo = this.userDataSource.getRepository('Contact');
+    const repo = this.userDataSource.getRepository(ContactEntity);
     await repo.clear();
     if (contacts && contacts.length) {
       await repo.save(contacts);
@@ -151,8 +174,8 @@ class DbService {
   // Friend requests
   async getFriendRequests() {
     if (!this.userDataSource) return [];
-    const repo = this.userDataSource.getRepository('FriendRequest');
-    const rows = await repo.find({ order: { createdAt: 'ASC' } });
+    const repo = this.userDataSource.getRepository(FriendRequestEntity);
+    const rows = await repo.find({ order: { createdAt: "ASC" } });
     return rows
       .map((r) => {
         try {
@@ -166,7 +189,7 @@ class DbService {
 
   async upsertFriendRequest(request) {
     this.ensureUserDb();
-    const repo = this.userDataSource.getRepository('FriendRequest');
+    const repo = this.userDataSource.getRepository(FriendRequestEntity);
     await repo.delete({ fromUserId: request.fromUser.id });
     const payloadJson = JSON.stringify(request);
     await repo.save({ fromUserId: request.fromUser.id, payloadJson, createdAt: Date.now() });
@@ -175,7 +198,7 @@ class DbService {
 
   async removeFriendRequestByUserId(userId) {
     this.ensureUserDb();
-    const repo = this.userDataSource.getRepository('FriendRequest');
+    const repo = this.userDataSource.getRepository(FriendRequestEntity);
     await repo.delete({ fromUserId: userId });
     return true;
   }
@@ -183,26 +206,26 @@ class DbService {
   // Messages
   async getMessagesByConversation(conversationId) {
     if (!this.userDataSource) return [];
-    const repo = this.userDataSource.getRepository('Message');
-    return await repo.find({ where: { conversationId }, order: { timestamp: 'ASC' } });
+    const repo = this.userDataSource.getRepository(MessageEntity);
+    return await repo.find({ where: { conversationId }, order: { timestamp: "ASC" } });
   }
 
   async getAllMessages() {
     if (!this.userDataSource) return [];
-    const repo = this.userDataSource.getRepository('Message');
+    const repo = this.userDataSource.getRepository(MessageEntity);
     return await repo.find();
   }
 
   async upsertMessage(message) {
     this.ensureUserDb();
-    const repo = this.userDataSource.getRepository('Message');
+    const repo = this.userDataSource.getRepository(MessageEntity);
     await repo.save(message);
     return true;
   }
 
   async replaceAllMessages(messages) {
     this.ensureUserDb();
-    const repo = this.userDataSource.getRepository('Message');
+    const repo = this.userDataSource.getRepository(MessageEntity);
     await repo.clear();
     if (messages && messages.length) {
       await repo.save(messages);
@@ -213,13 +236,13 @@ class DbService {
   // Conversations
   async getConversations() {
     if (!this.userDataSource) return [];
-    const repo = this.userDataSource.getRepository('Conversation');
-    return await repo.find({ order: { updatedAt: 'DESC' } });
+    const repo = this.userDataSource.getRepository(ConversationEntity);
+    return await repo.find({ order: { updatedAt: "DESC" } });
   }
 
   async replaceAllConversations(convos) {
     this.ensureUserDb();
-    const repo = this.userDataSource.getRepository('Conversation');
+    const repo = this.userDataSource.getRepository(ConversationEntity);
     await repo.clear();
     if (convos && convos.length) {
       const normalized = convos.map((c) => ({
@@ -236,14 +259,14 @@ class DbService {
 
   async upsertConversation(convo) {
     this.ensureUserDb();
-    const repo = this.userDataSource.getRepository('Conversation');
+    const repo = this.userDataSource.getRepository(ConversationEntity);
     await repo.save(convo);
     return true;
   }
 
   async deleteConversationByParticipant(participantId) {
     this.ensureUserDb();
-    const repo = this.userDataSource.getRepository('Conversation');
+    const repo = this.userDataSource.getRepository(ConversationEntity);
     await repo.delete({ participantId });
     return true;
   }
@@ -251,11 +274,12 @@ class DbService {
   // Clear chat data only (messages + conversations)
   async clearUserChatsOnly() {
     if (!this.userDataSource) return;
-    const msgRepo = this.userDataSource.getRepository('Message');
-    const convoRepo = this.userDataSource.getRepository('Conversation');
+    const msgRepo = this.userDataSource.getRepository(MessageEntity);
+    const convoRepo = this.userDataSource.getRepository(ConversationEntity);
     await msgRepo.clear();
     await convoRepo.clear();
   }
 }
 
 module.exports = new DbService();
+module.exports.DbService = DbService;
