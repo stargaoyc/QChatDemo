@@ -276,8 +276,21 @@ class DbService {
     if (!this.userDataSource) return;
     const msgRepo = this.userDataSource.getRepository(MessageEntity);
     const convoRepo = this.userDataSource.getRepository(ConversationEntity);
+
+    // 1) Remove all messages
     await msgRepo.clear();
-    await convoRepo.clear();
+
+    // 2) Preserve conversations so the user keeps their contact list, but reset chat state
+    const convos = await convoRepo.find();
+    if (convos && convos.length > 0) {
+      const sanitized = convos.map((c) => ({
+        ...c,
+        lastMessageId: null,
+        unreadCount: 0,
+        updatedAt: 0,
+      }));
+      await convoRepo.save(sanitized);
+    }
   }
 }
 

@@ -114,7 +114,14 @@ ipcMain.handle("db:get", async (event, key) => {
 
   // Per-user structured data
   if (key === "orbit_settings") {
-    return await dbService.getSettings();
+    // If user DB is not initialized yet (e.g. on login/register page),
+    // fall back to global KV so pre-login settings (serverHost/Port, theme, etc.) still work.
+    const perUser = await dbService.getSettings();
+    if (perUser && Object.keys(perUser).length > 0) {
+      return perUser;
+    }
+    const globalVal = await dbService.getGlobal(key);
+    return globalVal || {};
   }
   if (key === "orbit_contacts") {
     return await dbService.getContacts();
@@ -160,7 +167,16 @@ ipcMain.handle("db:set", async (event, { key, value }) => {
     return true;
   }
   if (key === "orbit_settings") {
-    await dbService.setSettingsKey("app", value);
+    // Normally settings are per-user; however on register/login there may be no user DB yet.
+    // In that case, gracefully fall back to global KV instead of throwing.
+    try {
+      await dbService.setSettingsKey("app", value);
+    } catch (e) {
+      console.warn(
+        "[Main] orbit_settings fallback to global store because user DB is not initialized yet.",
+      );
+      await dbService.setGlobal(key, value);
+    }
     return true;
   }
   if (key === "orbit_contacts") {

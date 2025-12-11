@@ -61,26 +61,36 @@ const RegisterPage: React.FC = () => {
 
     setLoading(true);
 
-    const prev = await storageService.getSettings();
-    const next: any = { ...prev };
-    if (hostTrim) next.serverHost = hostTrim; else delete next.serverHost;
-    if (portTrim) next.serverPort = Number(portTrim); else delete next.serverPort;
-    await storageService.saveSettings(next);
+    try {
+      const prev = await storageService.getSettings();
+      const next: any = { ...prev };
+      if (hostTrim) next.serverHost = hostTrim; else delete next.serverHost;
+      if (portTrim) next.serverPort = Number(portTrim); else delete next.serverPort;
+      await storageService.saveSettings(next);
 
-    socketService.configureServer(hostTrim || undefined, portTrim || undefined);
+      socketService.configureServer(hostTrim || undefined, portTrim || undefined);
 
-    const result = await socketService.register(trimmedId, trimmedPwd);
+      const result = await socketService.register(trimmedId, trimmedPwd);
 
-    setLoading(false);
+      if (!result.success) {
+        const reason =
+          result.reason === 'USER_EXISTS'
+            ? '该用户已注册'
+            : result.reason === 'CONNECTION_FAILED'
+              ? '服务器连接失败，请检查网络或确认服务端已启动'
+              : '注册失败，请稍后重试';
+        setError(reason);
+        return;
+      }
 
-    if (!result.success) {
-      const reason = result.reason === 'USER_EXISTS' ? '该用户已注册' : result.reason === 'CONNECTION_FAILED' ? '服务器连接失败，请检查网络或确认服务端已启动' : '注册失败，请稍后重试';
-      setError(reason);
-      return;
+      setSuccess('注册成功，请返回登录');
+      setTimeout(() => navigate('/'), 1200);
+    } catch (e) {
+      console.error('Register failed', e);
+      setError('注册过程中出现异常，请稍后重试');
+    } finally {
+      setLoading(false);
     }
-
-    setSuccess('注册成功，请返回登录');
-    setTimeout(() => navigate('/'), 1200);
   };
 
   return (

@@ -51,6 +51,8 @@ class SocketService {
   private currentPassword: string | null = null;
   // Cache messages received before any UI handler is attached
   private earlyMessages: Message[] = [];
+  // Cache friend requests received before UI subscribes (e.g. queued offline requests)
+  private earlyFriendRequests: any[] = [];
   private changePasswordPending: Array<(res: { success: boolean; reason?: string }) => void> = [];
 
   getState(): ConnectionState {
@@ -273,7 +275,12 @@ class SocketService {
             this.notifyMessage(data.payload as Message);
           }
           if (data.type === "FRIEND_REQUEST") {
-            this.friendRequestHandlers.forEach((h) => h(data.payload));
+            if (this.friendRequestHandlers.size === 0) {
+              // No listeners yet (e.g. delivered right after login before Dashboard mounts)
+              this.earlyFriendRequests.push(data.payload);
+            } else {
+              this.friendRequestHandlers.forEach((h) => h(data.payload));
+            }
           }
           if (data.type === "FRIEND_ACCEPT") {
             this.friendAcceptHandlers.forEach((h) => h(data.payload));
@@ -581,6 +588,11 @@ class SocketService {
 
   onFriendRequest(handler: FriendSignalHandler) {
     this.friendRequestHandlers.add(handler);
+    // Replay any queued requests that arrived before handler registration
+    if (this.earlyFriendRequests.length > 0) {
+      this.earlyFriendRequests.forEach((req) => handler(req));
+      this.earlyFriendRequests = [];
+    }
     return () => this.friendRequestHandlers.delete(handler);
   }
 
