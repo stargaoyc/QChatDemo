@@ -1,7 +1,10 @@
 {
   "name": "qchat",
   "description": "一个最小可用的安全聊天应用",
-  "author": "QChat Team",
+  "author": {
+    "name": "QChat Team",
+    "email": "qchat@example.com"
+  },
   "version": "0.1.0",
   "private": true,
   "main": "electron/main.js",
