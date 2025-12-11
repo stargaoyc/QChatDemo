@@ -79,7 +79,8 @@
       "node_modules/bindings/**/*",
       "node_modules/file-uri-to-path/**/*",
       "node_modules/reflect-metadata/**/*",
-      "node_modules/typeorm/**/*"
+      "node_modules/typeorm/**/*",
+      "node_modules/tslib/**/*"
     ],
     "extraResources": [
       {
