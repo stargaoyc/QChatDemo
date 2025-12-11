@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, vi } from "vitest";
 
 // Setup global window mock BEFORE importing storageService
 if (typeof globalThis.window === "undefined") {

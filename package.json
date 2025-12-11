@@ -25,6 +25,7 @@
     "@electron/rebuild": "^4.0.1",
     "@types/react": "^18.2.66",
     "@types/react-dom": "^18.2.22",
+    "@types/ws": "^8.5.10",
     "@vitejs/plugin-react": "^4.2.1",
     "autoprefixer": "^10.4.19",
     "concurrently": "^8.2.2",
@@ -73,7 +74,9 @@
       "!node_modules/**/*",
       "node_modules/better-sqlite3/**/*",
       "node_modules/bindings/**/*",
-      "node_modules/file-uri-to-path/**/*"
+      "node_modules/file-uri-to-path/**/*",
+      "node_modules/reflect-metadata/**/*",
+      "node_modules/typeorm/**/*"
     ],
     "extraResources": [
       {

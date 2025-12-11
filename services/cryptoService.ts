@@ -118,7 +118,8 @@ class CryptoService {
     const ciphertext = await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, encoded);
 
     // Format: IV (base64) : Ciphertext (base64)
-    return `${arrayBufferToBase64(iv)}:${arrayBufferToBase64(ciphertext)}`;
+    // iv.buffer is ArrayBuffer; ciphertext is already ArrayBuffer
+    return `${arrayBufferToBase64(iv.buffer)}:${arrayBufferToBase64(ciphertext)}`;
   }
 
   async decrypt(encryptedContent: string, senderId: string): Promise<string> {
@@ -135,13 +136,14 @@ class CryptoService {
       const parts = encryptedContent.split(":");
       if (parts.length !== 2) return encryptedContent; // Not encrypted or invalid format
 
-      const iv = base64ToArrayBuffer(parts[0]);
-      const ciphertext = base64ToArrayBuffer(parts[1]);
+      const ivBuffer = base64ToArrayBuffer(parts[0]);
+      const ciphertextBuffer = base64ToArrayBuffer(parts[1]);
 
+      // Use Uint8Array for cross-platform compatibility (Node.js and browser)
       const decrypted = await window.crypto.subtle.decrypt(
-        { name: "AES-GCM", iv: new Uint8Array(iv) },
+        { name: "AES-GCM", iv: new Uint8Array(ivBuffer) },
         key,
-        new Uint8Array(ciphertext),
+        new Uint8Array(ciphertextBuffer),
       );
 
       return new TextDecoder().decode(decrypted);

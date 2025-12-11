@@ -1,15 +1,5 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { SocketService } from "../../services/socketService"; // Note: You might need to export the class or use the instance
-// Assuming socketService exports the instance by default, but for testing we might want to access the class or reset the instance.
-// Since the file exports `export const socketService = new SocketService();`, we can test that instance but state might persist.
-// Ideally, we would export the class too. Let's assume we can modify the file to export the class or just test the singleton carefully.
-
-// To make it testable without changing source code too much, we will rely on the singleton but reset it if possible.
-// However, `socketService.ts` does not export the class `SocketService` directly in the previous `read_file` output.
-// It has `class SocketService { ... }` and `export const socketService = new SocketService();`.
-// I will try to import the singleton.
-
 import { socketService } from "../../services/socketService";
 
 // Mock WebSocket
@@ -21,7 +11,8 @@ class MockWebSocket {
   onclose: () => void = () => {};
   onerror: (err: any) => void = () => {};
 
-  send(data: string) {}
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  send(_data: string) {}
   close() {}
 
   static OPEN = 1;
@@ -57,7 +48,7 @@ describe("SocketService", () => {
   });
 
   it("should attempt to connect when connect() is called", async () => {
-    const user = { id: "u1", username: "test", avatar: "" };
+    const user = { id: "u1", username: "test", avatar: "", status: "online" as const };
     socketService.configureServer("localhost", 8080);
 
     await socketService.connect(user, "password");
@@ -71,7 +62,7 @@ describe("SocketService", () => {
   });
 
   it("should send AUTH message upon connection", async () => {
-    const user = { id: "u1", username: "test", avatar: "" };
+    const user = { id: "u1", username: "test", avatar: "", status: "online" as const };
     const sendSpy = vi.spyOn(MockWebSocket.prototype, "send");
 
     await socketService.connect(user, "secret");

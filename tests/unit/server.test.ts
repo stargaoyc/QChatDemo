@@ -1,7 +1,6 @@
-import { describe, it, expect, beforeAll, afterAll, vi, beforeEach } from "vitest";
-import { WebSocket } from "ws";
-import fs from "fs";
-import path from "path";
+/// <reference path="./test-types.d.ts" />
+import { describe, it, expect, beforeAll, afterAll, vi } from "vitest";
+import { WebSocket, WebSocketServer } from "ws";
 
 // Mock fs
 vi.mock("fs", () => {
@@ -20,10 +19,10 @@ vi.mock("fs", () => {
 });
 
 describe("WebSocket Server", () => {
-  let wss;
-  let client1;
-  let client2;
-  let startServer;
+  let wss: WebSocketServer;
+  let client1: WebSocket;
+  let client2: WebSocket;
+  let startServer: (port: number, host?: string) => WebSocketServer;
   const PORT = 8082; // Use a different port
   const HOST = "localhost";
   const WS_URL = `ws://${HOST}:${PORT}`;

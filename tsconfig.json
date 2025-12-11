@@ -21,6 +21,16 @@
     "noFallthroughCasesInSwitch": true
   },
   "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["node_modules", "vite.config.ts", "electron", "server", "dist", "dist-electron"],
+  "exclude": [
+    "node_modules",
+    "vite.config.ts",
+    "electron",
+    "server",
+    "dist",
+    "dist-electron",
+    "tests",
+    "**/*.test.ts",
+    "__mocks__"
+  ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

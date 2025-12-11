@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach, vi, afterEach } from "vitest";
+/// <reference path="./test-types.d.ts" />
+import { describe, it, expect, beforeEach, vi } from "vitest";
 import { mockDataSource, mockRepo } from "../../__mocks__/typeorm";
 import * as typeorm from "typeorm";
 import { KvEntity } from "../../electron/entities";
@@ -53,7 +54,7 @@ describe("DbService", () => {
   });
 
   it("should initialize global database on first access", async () => {
-    const mockRepo = await (dbService as any).getGlobalRepo();
+    const repo = await (dbService as any).getGlobalRepo();
     expect(mockDataSource.initialize).toHaveBeenCalled();
     expect(mockDataSource.getRepository).toHaveBeenCalledWith(KvEntity);
   });
