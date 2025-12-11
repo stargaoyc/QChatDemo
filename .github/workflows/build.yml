@@ -1,0 +1,54 @@
+name: Build and Package
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Rebuild native modules
+        run: npm run rebuild
+
+      - name: Build renderer
+        run: npm run build
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: npm run dist:win
+        shell: pwsh
+
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: npm run dist:mac
+        shell: bash
+
+      - name: Package (Linux)
+        if: runner.os == 'Linux'
+        run: npm run dist:linux
+        shell: bash
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: qchat-${{ matrix.os }}
+          path: release/*
